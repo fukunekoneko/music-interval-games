@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音程判定ゲーム</title>
+<style>
+:root{color-scheme:light;--ink:#20252b;--muted:#667085;--line:#d8dde5;--accent:#315bd6;--good:#16834a;--bad:#c43d3d}
+*{box-sizing:border-box}body{margin:0;padding:24px 14px;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:#f4f6fa}
+main{max-width:720px;margin:auto}h1{font-size:1.55rem;margin:0 0 8px}.intro{color:var(--muted);margin:0 0 18px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}.stat,.panel{background:white;border:1px solid var(--line);border-radius:14px;padding:14px}.stat small{display:block;color:var(--muted)}.stat strong{font-size:1.55rem}.panel{margin:12px 0}
+.topline{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}#staff-wrap{background:#fff;border:1px solid #e7e9ed;border-radius:10px;padding:8px}svg{display:block;width:100%;height:auto}
+.hint{color:var(--muted);font-size:.9rem;text-align:center;margin:9px 0 0}label{display:block;font-weight:600;margin-bottom:7px}
+select,button{font:inherit;border-radius:9px;padding:11px 12px}select{width:100%;border:1px solid #b9c1ce;background:white;color:var(--ink)}
+button{border:0;background:var(--accent);color:white;font-weight:650;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
+.actions{display:flex;gap:9px;margin-top:12px}.actions button{flex:1}.secondary{background:#e9edf5;color:#263247}
+#feedback{min-height:52px;line-height:1.6}.good{color:var(--good);font-weight:700}.bad{color:var(--bad);font-weight:700}
+#explanation{display:none;margin-top:12px;padding:13px;background:#f1f4fa;border-radius:10px;line-height:1.75}
+fieldset{border:0;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:14px}fieldset label{font-weight:400;margin:0;display:flex;align-items:center;gap:6px}input[type=checkbox]{width:17px;height:17px}.settings-title{font-weight:700;margin-bottom:10px}
+@media(max-width:440px){body{padding:17px 10px}.stat,.panel{padding:11px}.actions{flex-direction:column}}
+</style>
+</head>
+<body>
+<main>
+<h1>音程判定ゲーム</h1>
+<p class="intro">五線譜の2つの音を読み取り、音程を選んで回答してください。</p>
+<section class="stats">
+ <div class="stat"><small>正解数</small><strong id="score">0</strong></div>
+ <div class="stat"><small>問題数</small><strong id="count">0</strong></div>
+ <div class="stat"><small>正答率</small><strong id="rate">―</strong></div>
+</section>
+<section class="panel">
+ <div class="topline"><strong>第 <span id="qnum">1</span> 問</strong><span id="clef-label">ト音記号</span></div>
+ <div id="staff-wrap"><svg id="staff" viewBox="0 0 420 220" role="img" aria-label="2つの音符が書かれた五線譜"></svg></div>
+ <p class="hint">下の音から上の音への音程を答えてください。</p>
+</section>
+<section class="panel">
+ <label for="answer">音程を選択してください</label>
+ <select id="answer"><option value="">音程を選ぶ</option></select>
+ <div class="actions"><button id="submit">回答する</button><button id="next" class="secondary" disabled>次の問題へ</button></div>
+</section>
+<section class="panel" id="feedback" aria-live="polite">音程を選んで「回答する」を押してください。</section>
+<section class="panel">
+ <div class="settings-title">出題設定</div>
+ <fieldset>
+  <label><input type="checkbox" id="treble" checked> ト音記号</label>
+  <label><input type="checkbox" id="bass" checked> ヘ音記号</label>
+  <label><input type="checkbox" id="acc" checked> ♯・♭・ダブルシャープ／フラットあり</label>
+ </fieldset>
+ <p class="hint">設定を変更すると新しい問題に切り替わります。</p>
+</section>
+</section>
+</main>
+<script>
+(()=>{
+const $=id=>document.getElementById(id);
+const natural=[0,2,4,5,7,9,11], letterNames=["C","D","E","F","G","A","B"], jpNames=["ド","レ","ミ","ファ","ソ","ラ","シ"];
+const perfectNums=[1,4,5,8];
+let score=0,count=0,current=null,answered=false;
+
+function pitch(step,acc){return Math.floor(step/7)*12+natural[((step%7)+7)%7]+acc;}
+function intervalName(a,b,aa,ba){
+ const n=b-a+1, semis=pitch(b,ba)-pitch(a,aa), base=[0,2,4,5,7,9,11,12][n-1],d=semis-base;
+ if(perfectNums.includes(n)){
+  return ({'-2':`重減${n}度`,'-1':`減${n}度`,'0':`完全${n}度`,'1':`増${n}度`,'2':`重増${n}度`})[d]||null;
+ }
+ return ({'-3':`重減${n}度`,'-2':`減${n}度`,'-1':`短${n}度`,'0':`長${n}度`,'1':`増${n}度`,'2':`重増${n}度`})[d]||null;
+}
+function noteName(step,acc){
+ const octave=Math.floor(step/7),letter=((step%7)+7)%7;
+ const symbol=acc===2?"𝄪":acc===1?"♯":acc===-1?"♭":acc===-2?"𝄫":"";
+ const jp=acc===2?"ダブルシャープ":acc===1?"シャープ":acc===-1?"フラット":acc===-2?"ダブルフラット":"";
+ return {short:letterNames[letter]+(octave)+ (acc===2?"𝄪":acc===1?"♯":acc===-1?"♭":acc===-2?"𝄫":""),detail:jpNames[letter]+(jp?"（"+jp+"）":"")+"・"+letterNames[letter]+octave+symbol};
+}
+function makeQuestion(){
+ const clefs=[];if($("treble").checked)clefs.push("treble");if($("bass").checked)clefs.push("bass");
+ if(!clefs.length){$("treble").checked=true;clefs.push("treble");}
+ const clef=clefs[Math.floor(Math.random()*clefs.length)],min=clef==="treble"?27:13,max=clef==="treble"?37:23;
+ for(let t=0;t<3000;t++){
+  const a=min+Math.floor(Math.random()*(max-min+1)),b=a+1+Math.floor(Math.random()*7);
+  const use=$("acc").checked,aa=use?Math.floor(Math.random()*5)-2:0,ba=use?Math.floor(Math.random()*5)-2:0;
+  const ans=intervalName(a,b,aa,ba);
+  if(ans)return {clef,a,b,aa,ba,ans};
+ }
+ return {clef,a:min,b:min+2,aa:0,ba:0,ans:"長3度"};
+}
+function draw(){
+ const q=current,svg=$("staff");$("clef-label").textContent=q.clef==="treble"?"ト音記号":"ヘ音記号";
+ const bottom=q.clef==="treble"?30:18,y=step=>165-(step-bottom)*5;let s="";
+ for(let i=0;i<5;i++){const yy=165-i*10;s+=`<line x1="24" y1="${yy}" x2="396" y2="${yy}" stroke="#333" stroke-width="1.4"/>`;}
+ for(const [step,x] of [[q.a,145],[q.b,310]]){const yy=y(step);
+  if(yy<125)for(let ly=115;ly>=yy;ly-=10)s+=`<line x1="${x-18}" y1="${ly}" x2="${x+18}" y2="${ly}" stroke="#333" stroke-width="1.3"/>`;
+  if(yy>165)for(let ly=175;ly<=yy;ly+=10)s+=`<line x1="${x-18}" y1="${ly}" x2="${x+18}" y2="${ly}" stroke="#333" stroke-width="1.3"/>`;
+ }
+ s+=q.clef==="treble"?`<text x="32" y="166" font-size="100" font-family="serif" fill="#111">𝄞</text>`:`<text x="34" y="160" font-size="87" font-family="serif" fill="#111">𝄢</text>`;
+ function note(step,acc,x){const yy=y(step),mark=acc===2?"𝄪":acc===1?"♯":acc===-1?"♭":acc===-2?"𝄫":"";
+  return `${mark?`<text x="${x-29}" y="${yy+8}" font-size="27" text-anchor="middle" fill="#111">${mark}</text>`:""}<ellipse cx="${x}" cy="${yy}" rx="10" ry="7" transform="rotate(-20 ${x} ${yy})" fill="#111"/>`;}
+ svg.innerHTML=s+note(q.a,q.aa,145)+note(q.b,q.ba,310);
+}
+function fillOptions(){
+ const sel=$("answer");sel.innerHTML='<option value="">音程を選ぶ</option>';
+ for(let n=1;n<=8;n++){
+  const labels=perfectNums.includes(n)?["重減","減","完全","増","重増"]:["重減","減","短","長","増","重増"];
+  for(const quality of labels){
+   const value=quality+n+"度",opt=document.createElement("option");opt.value=value;opt.textContent=value;sel.appendChild(opt);
+   if(quality==="重増"){const alias=document.createElement("option");alias.value="重長"+n+"度";alias.textContent="重増"+n+"度";sel.appendChild(alias);}
+  }
+ }
+}
+function newQuestion(){
+ current=makeQuestion();answered=false;$("qnum").textContent=count+1;$("answer").value="";$("answer").disabled=false;
+ $("submit").disabled=false;$("next").disabled=true;$("feedback").textContent="音程を選んで「回答する」を押してください。";draw();
+}
+function explain(){
+ const q=current,n=q.b-q.a+1,semi=pitch(q.b,q.ba)-pitch(q.a,q.aa),base=[0,2,4,5,7,9,11,12][n-1];
+ const low=noteName(q.a,q.aa),high=noteName(q.b,q.ba),isPerfect=perfectNums.includes(n);
+ const difference=semi-base;
+ let intervalRule;
+ if(isPerfect)intervalRule=`完全系の音程（${n}度）の基準は${base}半音です。`;
+ else intervalRule=`長短系の音程（${n}度）の基準となる長${n}度は${base}半音です。`;
+ let quality;
+ if(isPerfect)quality=difference===0?"基準どおりなので完全音程です。":difference===1?"基準より半音広いので増音程です。":difference===2?"基準より全音広いので重増音程です。":difference===-1?"基準より半音狭いので減音程です。":"基準より全音狭いので重減音程です。";
+ else quality=difference===0?"基準どおりなので長音程です。":difference===-1?"長音程より半音狭いので短音程です。":difference===1?"長音程より半音広いので増音程です。":difference===2?"長音程より全音広いので重増音程です。":difference===-2?"長音程より全音狭いので減音程です。":"長音程より1音半狭いので重減音程です。";
+ const selected=$("answer").value,correct=selected===q.ans||selected.replace(/^重長/,"重増")===q.ans;
+ $("feedback").innerHTML=`<div><div class="${correct?"good":"bad"}">${correct?"正解です！":"不正解です。正解は "+q.ans+" です。"}</div>
+ <div id="explanation" style="display:block"><strong>解説</strong><br>
+ ① 音名：下の音は <b>${low.detail}</b>、上の音は <b>${high.detail}</b> です。<br>
+ ② 度数：音名を両端を含めて数えると <b>${n}度</b> です。<br>
+ ③ 半音数：2つの音の高さの差は <b>${semi}半音</b> です。${intervalRule}<br>
+ ④ 判定：${quality}<br>
+ <b>したがって、答えは ${q.ans} です。</b></div></div>`;
+}
+function submit(){
+ if(answered)return;if(!$("answer").value){$("feedback").textContent="先に音程を選択してください。";return;}
+ answered=true;count++;const selected=$("answer").value,ok=selected===current.ans||selected.replace(/^重長/,"重増")===current.ans;
+ if(ok)score++;$("score").textContent=score;$("count").textContent=count;$("rate").textContent=Math.round(score/count*100)+"%";
+ explain();$("answer").disabled=true;$("submit").disabled=true;$("next").disabled=false;
+}
+$("submit").addEventListener("click",submit);$("next").addEventListener("click",newQuestion);
+["treble","bass","acc"].forEach(id=>$(id).addEventListener("change",newQuestion));
+fillOptions();newQuestion();
+})();
+</script>
+</body>
+</html>
